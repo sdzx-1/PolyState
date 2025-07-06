@@ -113,6 +113,10 @@ pub fn generateMermaid(
     try writer.writeAll(
         \\---
         \\config:
+        \\  layout: elk
+        \\  elk:
+        \\    mergeEdges: false
+        \\    nodePlacementStrategy: LINEAR_SEGMENTS
         \\  theme: 'base'
         \\  themeVariables:
         \\    primaryColor: 'white'
