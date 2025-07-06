@@ -4,11 +4,12 @@ const Mode = ps.Mode;
 const Method = ps.Method;
 const Adler32 = std.hash.Adler32;
 
+arena: std.heap.ArenaAllocator,
 name: []const u8,
-mode: Mode,
-node_set: std.AutoArrayHashMapUnmanaged(u32, Node),
-edge_array_list: std.ArrayListUnmanaged(Edge),
-node_id_counter: u32 = 0,
+nodes: std.ArrayListUnmanaged(Node),
+edges: std.ArrayListUnmanaged(Edge),
+
+const Graph = @This();
 
 pub const Node = struct {
     name: []const u8,
@@ -18,152 +19,253 @@ pub const Node = struct {
 pub const Edge = struct {
     from: u32,
     to: u32,
-    method: ?Method,
+    color: Color,
     label: []const u8,
 };
 
-const Self = @This();
-
-pub const init: Self = .{
-    .name = "",
-    .mode = .not_suspendable,
-    .node_set = .empty,
-    .edge_array_list = .empty,
+pub const Color = enum {
+    black,
+    blue,
 };
 
-pub fn print_graphviz(
+pub fn generateDot(
     self: @This(),
     writer: anytype,
 ) !void {
-    try writer.writeAll("digraph fsm_state_graph {\n");
+    try writer.writeAll(
+        \\digraph fsm_state_graph {
+        \\
+    );
 
     { //state graph
         try writer.print(
-            \\  subgraph cluster_{s} {s}
-            \\    label = "{s}_graph";
+            \\  subgraph cluster_{0s} {{
+            \\    label = "{0s}_graph";
             \\    labelloc = "t";
             \\    labeljust = "c";
             \\
         , .{
-            self.name, "{", self.name,
+            self.name,
         });
 
-        var node_set_iter = self.node_set.iterator();
-        while (node_set_iter.next()) |entry| {
-            try writer.print("    {d} [label = \"{d}\"];\n", .{ entry.key_ptr.*, entry.value_ptr.id });
-        }
-        for (self.edge_array_list.items) |edge| {
-            try writer.print("    {d} -> {d} [label = \"{s}", .{ edge.from, edge.to, edge.label });
-            if (edge.method) |method| {
-                switch (method) {
-                    .current => {
-                        try writer.writeAll("\"");
-                    },
-                    .next => {
-                        try writer.writeAll("\"  color=\"blue\" ");
-                    },
-                }
-            } else {
-                try writer.writeAll("\"");
-            }
-
-            try writer.writeAll("];\n");
+        for (self.edges.items) |edge| {
+            try writer.print(
+                \\    {d} -> {d} [label = "{s}"{s}];
+                \\
+            , .{
+                edge.from,
+                edge.to,
+                edge.label,
+                switch (edge.color) {
+                    .black => "",
+                    .blue =>
+                    \\ color = "blue"
+                    ,
+                },
+            });
         }
 
-        try writer.writeAll("  }\n");
+        try writer.writeAll(
+            \\  }
+            \\
+        );
     }
 
     { //all_state
 
         try writer.print(
-            \\  subgraph cluster_{s}_state {s}
-            \\    label = "{s}_state";
+            \\  subgraph cluster_{0s}_state {{
+            \\    label = "{0s}_state";
             \\    labelloc = "t";
             \\    labeljust = "c";
             \\    all_node [shape=plaintext, label=<
             \\      <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+            \\
         ,
-            .{ self.name, "{", self.name },
+            .{self.name},
         );
 
-        const nodes = self.node_set.values();
-
-        for (nodes) |node| {
+        for (self.nodes.items) |node| {
             try writer.print(
-                \\
                 \\      <TR><TD ALIGN="LEFT"> {d} -- {s} </TD></TR>
+                \\
             , .{ node.id, node.name });
         }
 
-        try writer.print(
-            \\
+        try writer.writeAll(
             \\      </TABLE>
             \\    >]
-            \\  {s}
+            \\  }
             \\
-        , .{"}"});
+        );
     }
 
-    try writer.writeAll("}\n");
-}
-
-pub fn deinit(self: *Self, gpa: std.mem.Allocator) void {
-    self.node_set.deinit(gpa);
-    self.edge_array_list.deinit(gpa);
-}
-
-fn makeHash(
-    Ty: type, //State
-) u32 {
-    return Adler32.hash(@typeName(Ty));
-}
-
-pub fn insertEdge(
-    graph: *@This(),
-    gpa: std.mem.Allocator,
-    From: type, //State
-    To: type, //State
-    method: ?Method,
-    label: []const u8,
-) !void {
-    const from_id: u32 = makeHash(From);
-    const to_id: u32 = makeHash(To);
-    try graph.edge_array_list.append(
-        gpa,
-        .{ .from = from_id, .to = to_id, .method = method, .label = label },
+    try writer.writeAll(
+        \\}
+        \\
     );
 }
-pub fn generate(graph: *@This(), gpa: std.mem.Allocator, FsmState: type) void {
-    graph.name = FsmState.name;
-    graph.mode = FsmState.mode;
-    dspGenerate(graph, gpa, FsmState.State);
+
+pub fn generateMermaid(
+    self: @This(),
+    writer: anytype,
+) !void {
+    try writer.writeAll(
+        \\---
+        \\config:
+        \\  layout: elk
+        \\  elk:
+        \\    mergeEdges: false
+        \\    nodePlacementStrategy: LINEAR_SEGMENTS
+        \\  theme: 'base'
+        \\  themeVariables:
+        \\    primaryColor: 'white'
+        \\    primaryTextColor: 'black'
+        \\    primaryBorderColor: 'black'
+        \\  flowchart:
+        \\    padding: 32
+        \\---
+        \\flowchart TB
+        \\
+    );
+
+    {
+        try writer.print(
+            \\  subgraph {s}_graph
+            \\    linkStyle default stroke-width:2px
+            \\
+        , .{self.name});
+
+        for (self.edges.items) |edge| {
+            try writer.print(
+                \\    {d} -- "{s}" --> {d}
+                \\
+            , .{ edge.from, edge.label, edge.to });
+        }
+
+        var blue_count: usize = 0;
+        for (self.edges.items) |edge| {
+            if (edge.color == .blue) {
+                blue_count += 1;
+            }
+        }
+
+        if (blue_count > 0) {
+            try writer.writeAll(
+                \\    linkStyle 
+            );
+
+            for (self.edges.items, 0..) |edge, i| {
+                if (edge.color == .blue) {
+                    try writer.print(
+                        \\{d}{s}
+                    , .{
+                        i,
+                        if (blue_count > 1) "," else "",
+                    });
+
+                    blue_count -= 1;
+                }
+            }
+
+            try writer.writeAll(
+                \\ stroke:blue
+                \\
+            );
+        }
+
+        for (self.nodes.items) |node| {
+            try writer.print(
+                \\    {0d}@{{ shape: circle }}
+                \\
+            , .{node.id});
+        }
+
+        try writer.writeAll(
+            \\  end
+            \\
+        );
+    }
+
+    {
+        try writer.print(
+            \\  subgraph {s}_states
+            \\    s["
+            \\
+        , .{self.name});
+
+        for (self.nodes.items) |node| {
+            try writer.print(
+                \\    {d} -- {s}
+                \\
+            , .{ node.id, node.name });
+        }
+        try writer.writeAll(
+            \\    "]
+            \\
+        );
+
+        try writer.writeAll(
+            \\    s@{ shape: text}
+            \\    s:::aligned
+            \\    classDef aligned text-align: left, white-space: nowrap
+            \\  end
+        );
+    }
 }
 
-fn dspGenerate(graph: *@This(), gpa: std.mem.Allocator, State: type) void {
-    const id: u32 = makeHash(State);
-    if (graph.node_set.get(id)) |_| {} else {
-        graph.node_set.put(gpa, id, .{
+pub fn initWithFsm(allocator: std.mem.Allocator, comptime FsmState: type, comptime max_len: usize) !Graph {
+    @setEvalBranchQuota(2000000);
+
+    var arena: std.heap.ArenaAllocator = .init(allocator);
+    errdefer arena.deinit();
+
+    const arena_allocator = arena.allocator();
+
+    var nodes: std.ArrayListUnmanaged(Node) = .empty;
+    var edges: std.ArrayListUnmanaged(Edge) = .empty;
+
+    const state_map: ps.StateMap(max_len) = comptime .init(FsmState);
+
+    comptime var state_map_iterator = state_map.iterator();
+    comptime var state_idx: u32 = 0;
+    inline while (state_map_iterator.next()) |State| : (state_idx += 1) {
+        try nodes.append(arena_allocator, .{
             .name = @typeName(State),
-            .id = graph.node_id_counter,
-        }) catch unreachable;
-        graph.node_id_counter += 1;
+            .id = state_idx,
+        });
+
         switch (@typeInfo(State)) {
             .@"union" => |un| {
                 inline for (un.fields) |field| {
-                    const edge_label = field.name;
                     const NextFsmState = field.type;
                     const NextState = NextFsmState.State;
-                    const method_val = if (NextFsmState.mode == .not_suspendable) null else NextFsmState.transition_method;
 
-                    if (graph.mode == .not_suspendable) {
-                        graph.insertEdge(gpa, State, NextState, null, edge_label) catch unreachable;
-                    } else {
-                        graph.insertEdge(gpa, State, NextState, method_val, edge_label) catch unreachable;
-                    }
-                    dspGenerate(graph, gpa, NextState);
+                    const next_state_idx: u32 = @intFromEnum(state_map.idFromState(NextState));
+
+                    try edges.append(arena_allocator, .{
+                        .from = state_idx,
+                        .to = next_state_idx,
+                        .color = switch (NextFsmState.transition_method) {
+                            .current => .black,
+                            .next => .blue,
+                        },
+                        .label = field.name,
+                    });
                 }
             },
             else => @compileError("Only support tagged union!"),
         }
     }
+
+    return .{
+        .arena = arena,
+        .edges = edges,
+        .name = FsmState.name,
+        .nodes = nodes,
+    };
+}
+
+pub fn deinit(self: *Graph) void {
+    self.arena.deinit();
 }

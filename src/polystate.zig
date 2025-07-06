@@ -98,6 +98,27 @@ pub fn StateMap(comptime max_len: usize) type {
             return @field(self.StateId, @typeName(State));
         }
 
+        pub fn iterator(comptime self: *const Self) Iterator {
+            return .{
+                .state_map = self,
+                .idx = 0,
+            };
+        }
+
+        pub const Iterator = struct {
+            state_map: *const Self,
+            idx: usize,
+
+            pub fn next(comptime self: *Iterator) ?type {
+                if (self.idx < self.state_map.avl.len) {
+                    defer self.idx += 1;
+                    return self.state_map.avl.nodes[self.idx].data[0];
+                }
+
+                return null;
+            }
+        };
+
         fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
             if (comptime !std.mem.eql(u8, b, a)) {
                 const error_str = std.fmt.comptimePrint(
@@ -243,14 +264,13 @@ test "polystate suspendable" {
     const StateA = Tmp.Example(.next, Tmp.A);
 
     const allocator = std.testing.allocator;
-    var graph = Graph.init;
-    defer graph.deinit(allocator);
-    graph.generate(allocator, StateA);
+    var graph = try Graph.initWithFsm(allocator, StateA, 20);
+    defer graph.deinit();
 
     const ExampleRunner = Runner(20, true, StateA);
 
     try std.testing.expectEqual(
-        graph.node_set.count(),
+        graph.nodes.items.len,
         ExampleRunner.state_map.avl.len,
     );
 
@@ -312,14 +332,13 @@ test "polystate not_suspendable" {
     const StateA = Tmp.Example(Tmp.A);
 
     const allocator = std.testing.allocator;
-    var graph = Graph.init;
-    defer graph.deinit(allocator);
-    graph.generate(allocator, StateA);
+    var graph = try Graph.initWithFsm(allocator, StateA, 20);
+    defer graph.deinit();
 
     const ExampleRunner = Runner(20, true, StateA);
 
     try std.testing.expectEqual(
-        graph.node_set.count(),
+        graph.nodes.items.len,
         ExampleRunner.state_map.avl.len,
     );
 
