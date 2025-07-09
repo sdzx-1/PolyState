@@ -30,14 +30,15 @@ pub const GraphMode = enum {
     mermaid,
 };
 
-pub fn generateGraph(
+pub fn addGraphFile(
     b: *std.Build,
     module_name: []const u8,
     module: *std.Build.Module,
+    max_len: usize,
     graph_mode: GraphMode,
     polystate: *std.Build.Dependency,
     target: std.Build.ResolvedTarget,
-) void {
+) std.Build.LazyPath {
     const options = b.addOptions();
     const writer = options.contents.writer();
     writer.print(
@@ -47,12 +48,12 @@ pub fn generateGraph(
         \\pub fn main() !void {{
         \\  var gpa_instance = std.heap.GeneralPurposeAllocator(.{{}}){{}};
         \\  const gpa = gpa_instance.allocator();
-        \\  var graph = try ps.Graph.initWithFsm(gpa, Target.EnterFsmState, 1_000_000);
+        \\  var graph = try ps.Graph.initWithFsm(gpa, Target.EnterFsmState, {d});
         \\  defer graph.deinit();
         \\  const writer = std.io.getStdOut().writer();
         \\  try graph.{s}(writer);
         \\}}
-    , .{ module_name, switch (graph_mode) {
+    , .{ module_name, max_len, switch (graph_mode) {
         .graphviz => "generateDot",
         .mermaid => "generateMermaid",
     } }) catch @panic("OOM");
@@ -66,18 +67,30 @@ pub fn generateGraph(
         },
     });
 
-    const gen_exe_name = std.mem.concat(b.allocator, u8, &.{ "_generate_dot_for_", module_name }) catch @panic("OOM");
+    const gen_exe_name = std.mem.concat(b.allocator, u8, &.{ "_generate_graph_for_", module_name }) catch @panic("OOM");
     const opt_exe = b.addExecutable(.{
         .name = gen_exe_name,
         .root_module = opt_mod,
     });
     const run = b.addRunArtifact(opt_exe);
-    const dot_file = run.captureStdOut();
+    return run.captureStdOut();
+}
+
+pub fn addInstallGraphFile(
+    b: *std.Build,
+    module_name: []const u8,
+    module: *std.Build.Module,
+    max_len: usize,
+    graph_mode: GraphMode,
+    polystate: *std.Build.Dependency,
+    target: std.Build.ResolvedTarget,
+    install_dir: std.Build.InstallDir,
+) *std.Build.Step.InstallFile {
+    const dot_file = addGraphFile(b, module_name, module, max_len, graph_mode, polystate, target);
 
     const output_name = std.mem.concat(b.allocator, u8, &.{ module_name, switch (graph_mode) {
         .graphviz => ".dot",
         .mermaid => ".mmd",
     } }) catch @panic("OOM");
-    const install_dot_file = b.addInstallFile(dot_file, output_name);
-    b.getInstallStep().dependOn(&install_dot_file.step);
+    return b.addInstallFileWithDir(dot_file, install_dir, output_name);
 }
