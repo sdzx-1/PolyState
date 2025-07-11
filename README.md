@@ -1,428 +1,322 @@
-Polystate: Composable Finite State Machines
+# Polystate
 
-# Building and using in an existing project
-Download and add polystate as a dependency by running the following command in your project root:
+**Build type-safe finite state machines with higher-order states.**
+
+With Polystate, you can write 'state functions' that produce entirely new states, whose transitions are decided by a set of parameters. This enables composition: constructing states using other states, or even other state functions.
+
+## Adding Polystate to your project
+
+Download and add Polystate as a dependency by running the following command in your project root:
 ```shell
 zig fetch --save git+https://github.com/sdzx-1/polystate.git
 ```
 
-Then add polystate as a dependency and import its modules and artifact in your build.zig:
-
+Then, retrieve the dependency in your build.zig:
 ```zig
-    const polystate = b.dependency("polystate", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
+const polystate = b.dependency("polystate", .{
+    .target = target,
+    .optimize = optimize,
+});
 ```
 
-Now add the modules to your module as you would normally:
-
+Finally, add the dependency's module to your module's imports:
 ```zig
-    exe_mod.addImport("polystate", typed_fsm.module("root"));
+exe_mod.addImport("polystate", polystate.module("root"));
 ```
 
-# Examples
+You should now be able to import Polystate in your module's code:
+```zig
+const ps = @import("polystate");
+```
 
-[polystate-examples](https://github.com/sdzx-1/polystate-examples)
+## The basics
 
-[ray-game](https://github.com/sdzx-1/ray-game)
+Let's build a state machine that completes a simple task: capitalize all words in a string that contain an underscore.
 
-# Discord
+Our state machine will contain three states: `FindWord`, `CheckWord`, and `Capitalize`:
+- `FindWord` finds the start of a word. `FindWord` transitions to `CheckWord` if it finds the start of a word.
+- `CheckWord` checks if an underscore exists in the word. `CheckWord` transitions to `Capitalize` if an underscore is found, or transitions back to `FindWord` if no underscore is found.
+- `Capitalize` capitalizes the word. `Capitalize` transitions back to `FindWord` once the word is capitalized.
 
-https://discord.gg/zUK2Zk9m
-
-# How to use polystate?
-
-Writing this document was more difficult than I anticipated. Although I have been writing and using this library for a while, it's not easy to explain it clearly to others. If you have any questions after reading this document, please don't hesitate to ask. I'd be happy to clear up any confusion!
-
-## Polystate's Core Design Philosophy
-1.  Record the state machine's status at the type level.
-2.  Achieve composable state machines through type composition.
-
-Finite State Machines (FSMs) are a powerful programming pattern. When combined with composability and type safety, they become an even more ideal programming paradigm.
-
-The `polystate` library is designed precisely for this purpose. To achieve this, you need to follow a few simple programming conventions. These conventions are very straightforward, and the benefits they bring are entirely worth it.
-
-## Practical Effects of Polystate
-1.  **Define the program's overall behavior through compositional declarations.** This means we gain the ability to specify the program's overall behavior at the type level. This significantly improves the correctness of imperative program structures. This programming style also encourages us to redesign the program's state from the perspective of types and composition, thereby enhancing code composability.
-2.  **Build complex state machines by composing simple states.** For the first time, we can achieve semantic-level code reuse through type composition. In other words, we have found a way to express semantic-level code reuse at the type level. This approach achieves three effects simultaneously: conciseness, correctness, and safety.
-3.  **Automatically generate state diagrams.** Since the program's overall behavior is determined by declarations, `polystate` can automatically generate state diagrams. Users can intuitively understand the program's overall behavior through these diagrams.
-
-I believe all of this represents a great step forward for imperative programming!
-
-## Detailed Explanation of Design Philosophy and Practical Effects
-
-Let's start with a concrete example of a simple state machine. I will explain the core design philosophy of this library in detail through comments in the code.
-
+Here's our state machine implemented with Polystate:
 ```zig
 const std = @import("std");
-const polystate = @import("polystate");
+const ps = @import("polystate");
 
-pub fn main() !void {
-    var st: GST = .{};
-    /// Determine an initial state
-    const wa = Example.Wit(Example.a){};
-    /// Start executing the state machine with the message handler of this initial state
-    /// The reason for using handler_normal here is related to tail-call optimization, which I will explain in detail later.
-    wa.handler_normal(&st);
-}
+pub const FindWord = union(enum) {
+    to_check_word: CapsFsm(CheckWord),
+    exit: CapsFsm(ps.Exit),
+    no_transition: CapsFsm(FindWord),
 
-pub const GST = struct {
-    counter_a: i64 = 0,
-    counter_b: i64 = 0,
-};
-
-/// `polystate` has two core state types: FST (FSM Type) and GST (Global State Type).
-/// FST must be an enum type. In this example, the FST is `Example`, which defines all the states of our state machine. In other words, it defines the set of states we will track at the type level.
-/// GST is the global data. In this example, the GST is defined above with two fields, `counter_a` and `counter_b`, representing the data needed for state `a` and state `b`, respectively.
-/// When we compose states, what we really want is to compose state handler functions, which implies a requirement for global data.
-/// Therefore, the first programming convention is: the handler function for any state has access to the GST (i.e., global data), but users should try to use only the data corresponding to the current state.
-/// For example, in the handler function for state `a`, you should try to use only the data `counter_a`.
-/// This can be easily achieved through some naming conventions, and it's easy to create corresponding generic functions through metaprogramming, but the specific implementation is outside the scope of `polystate`.
-const Example = enum {
-    /// Three concrete states are defined here
-    exit,
-    a,
-    b,
-
-    /// `Wit` is a core concept in `polystate`, short for Witness. The term comes from [Haskell](https://serokell.io/blog/haskell-type-level-witness), where it's called a 'type witness' or 'runtime evidence'.
-    /// The core concepts of a finite state machine include four parts: state, message, message handler function, and message generator function. I will detail these parts in the example below.
-    /// The purpose of the `Wit` function is to specify the state information contained in a message.
-    pub fn Wit(val: anytype) type {
-        return polystate.Witness(@This(), GST, null, polystate.val_to_sdzx(@This(), val));
-    }
-
-    /// This is the second programming convention: The FST needs a public declaration that contains the specific content of the state. By adding `ST` after the state name, we implicitly associate the state with its specific content.
-    /// In this example, this corresponds to the public declarations below:
-    /// exit ~ exitST
-    /// a    ~ aST
-    /// b    ~ bST
-    /// Here, `exitST` describes the four parts for the `exit` state: state, message, message handler function, and message generator function.
-    /// Since the `exit` state has no messages, it also has no message generator function.
-    /// This is the third programming convention: The implementation of a state's specific content must contain a function: `pub fn handler(*GST) void` or `pub fn conthandler(*GST) ContR`.
-    /// They represent the message handler function. The former means the state machine has full control of the control flow. The latter means a continuation function is returned, leaving the external caller to invoke the continuation function and take control of the flow.
-    pub const exitST = union(enum) {
-        pub fn handler(ist: *GST) void {
-            std.debug.print("exit\n", .{});
-            std.debug.print("st: {any}\n", .{ist.*});
-        }
-    };
-    pub const aST = a_st;
-    pub const bST = b_st;
-};
-
-/// This describes the four parts for state `a`: state, message, message handler function, and message generator function.
-/// 1. State
-/// The state here is `a`.
-pub const a_st = union(enum) {
-    /// 2. Message
-    /// A tagged union is used here to describe the messages, and `Wit` is used to describe the state we are about to transition to.
-    AddOneThenToB: Example.Wit(Example.b),
-    Exit: Example.Wit(Example.exit),
-
-    /// 3. Message Handler Function
-    /// Handles all messages generated by `genMsg`.
-    pub fn handler(ist: *GST) void {
-        switch (genMsg(ist)) {
-            .AddOneThenToB => |wit| {
-                ist.counter_a += 1;
-                /// This is the fourth programming convention: At the end of the message handling block, you must call `wit.handler(ist)` or similar code.
-                /// This indicates that the message handler function of the new state will be executed. The new state is controlled by the `Wit` function of the message.
-                wit.handler(ist);
+    pub fn handler(ctx: *Context) FindWord {
+        switch (ctx.string[0]) {
+            0 => return .exit,
+            ' ', '\t'...'\r' => {
+                ctx.string += 1;
+                return .no_transition;
             },
-            .Exit => |wit| wit.handler(ist),
-        }
-    }
-
-    /// 4. Message Generator Function
-    /// If the value of `counter_a` is greater than 3, return `.Exit`.
-    /// Otherwise, return `.AddOneThenToB`.
-    /// The messages generated and handled here are defined in part 2 above.
-    fn genMsg(ist: *GST) @This() {
-        if (ist.counter_a > 3) return .Exit;
-        return .AddOneThenToB;
-    }
-};
-
-pub const b_st = union(enum) {
-    AddOneThenToA: Example.Wit(Example.a),
-
-    pub fn handler(ist: *GST) void {
-        switch (genMsg()) {
-            .AddOneThenToA => |wit| {
-                ist.counter_b += 1;
-                wit.handler(ist);
+            else => {
+                ctx.word = ctx.string;
+                return .to_check_word;
             },
         }
     }
+};
 
-    fn genMsg() @This() {
-        return .AddOneThenToA;
+pub const CheckWord = union(enum) {
+    to_find_word: CapsFsm(FindWord),
+    to_capitalize: CapsFsm(Capitalize),
+    exit: CapsFsm(ps.Exit),
+    no_transition: CapsFsm(CheckWord),
+
+    pub fn handler(ctx: *Context) CheckWord {
+        switch (ctx.string[0]) {
+            0 => return .exit,
+            ' ', '\t'...'\r' => {
+                ctx.string += 1;
+                return .to_find_word;
+            },
+            '_' => {
+                ctx.string = ctx.word;
+                return .to_capitalize;
+            },
+            else => {
+                ctx.string += 1;
+                return .no_transition;
+            },
+        }
     }
 };
 
+pub const Capitalize = union(enum) {
+    to_find_word: CapsFsm(FindWord),
+    exit: CapsFsm(ps.Exit),
+    no_transition: CapsFsm(Capitalize),
+
+    pub fn handler(ctx: *Context) Capitalize {
+        switch (ctx.string[0]) {
+            0 => return .exit,
+            ' ', '\t'...'\r' => {
+                ctx.string += 1;
+                return .to_find_word;
+            },
+            else => {
+                ctx.string[0] = std.ascii.toUpper(ctx.string[0]);
+                ctx.string += 1;
+                return .no_transition;
+            },
+        }
+    }
+};
+
+pub const Context = struct {
+    string: [*:0]u8,
+    word: [*:0]u8,
+
+    pub fn init(string: [:0]u8) Context {
+        return .{
+            .string = string.ptr,
+            .word = string.ptr,
+        };
+    }
+};
+
+pub fn CapsFsm(comptime State: type) type {
+    return ps.FSM("Underscore Capitalizer", .not_suspendable, Context, null, {}, State);
+}
+
+pub fn main() void {
+    const StartingFsmState = CapsFsm(FindWord);
+
+    const Runner = ps.Runner(99, true, StartingFsmState);
+
+    var string_backing =
+        \\capitalize_me 
+        \\DontCapitalizeMe 
+        \\ineedcaps_  _IAlsoNeedCaps idontneedcaps
+        \\_/\o_o/\_ <-- wide_eyed
+    .*;
+    const string: [:0]u8 = &string_backing;
+
+    var ctx: Context = .init(string);
+
+    const starting_state_id = Runner.idFromState(StartingFsmState.State);
+
+    std.debug.print("Without caps:\n{s}\n\n", .{string});
+
+    Runner.runHandler(starting_state_id, &ctx);
+
+    std.debug.print("With caps:\n{s}\n", .{string});
+}
 ```
-The above is a simple example showing how to build a simple state machine with `polystate`.
-This example does not demonstrate `polystate`'s most powerful feature: **composability**.
 
-## Explaining Composability
-Let me modify the above example by adding a new state, `yes_or_no`, to demonstrate composability.
-I will omit some of the code that is identical to the above. The complete code for this example can be found [here](https://github.com/sdzx-1/polystate-examples/blob/main/src/exe-counter.zig).
+As you can see, each of our states is represented by a tagged union. These unions have two main components: their fields and their `handler` function.
 
+Rules for the fields:
+- Each field represents one of the state's transitions.
+- The type of a field describes the transition, primarily what the transitioned-to state will be.
+- Field types must be generated by `ps.FSM`, which wraps state union types and attaches additional information about the transition and its state machine.
+- For a single state machine's transitions, `ps.FSM` must always be given the same name, mode, and context type. In our case, we ensure this by wrapping `ps.FSM` with `CapsFsm`. In `CapsFsm`, the name is set to `"Underscore Capitalizer"`, the mode is set to `not_suspendable`, and the context type is set to `Context`.
+
+Rules for the `handler` function:
+- `handler` executes the state's logic and determines which transition to take.
+- `handler` takes a context parameter (`ctx`), which points to mutable data that is shared across all states.
+- `handler` returns a transition (one of the state's union fields).
+
+Once we have defined the states of our state machine, we make a runner using `ps.Runner`. Just like our state's transition types, the starting state we pass into `ps.Runner` must be generated using `ps.FSM`, which we accomplish using our `CapsFsm` wrapper: `CapsFsm(FindWord)`. Since our FSM's mode is set to `not_suspendable`, calling `runHandler` on our runner will run the state machine until completion (when the special `ps.Exit` state is reached). 
+
+`runHandler` also requires the 'state ID' of the state you want to start at. A runner provides both the `StateId` type and functions to convert between states and their ID. We use this to get the starting state ID: `Runner.idFromState(StartingFsmState.State)`.
+
+It may seem odd that we call `idFromState` with `StartingFsmState.State` instead of `StartingFsmState`, but this is because `StartingFsmState` is the wrapper type produced by `ps.FSM`, whereas `StartingFsmState.State` is the underlying state (`FindWord`). That's why we call it `StartingFsmState` instead of `StartingState`: the 'FSM' naming convention helps us remember that it's a wrapped state, and that we need to use its `State` declaration if we want the state it is wrapping.
+
+## Suspendable state machines
+In our previous example, our state machine's mode was `not_suspendable`. What if we set it to `suspendable`? Well, this would allow us to 'suspend' the execution of our state machine, run code outside of the state machine, and then resume the execution of our state machine.
+
+However, `suspendable` adds an additional requirement to your state transitions: they must tell the state machine whether or not to suspend after transitioning.
+
+This is our capitalization state machine, updated such that every time a word is chosen to be capitalized, we suspend execution and print the chosen word:
 ```zig
 const std = @import("std");
-const polystate = @import("polystate");
+const ps = @import("polystate");
 
-pub fn main() !void {
-   ...
-}
+pub const FindWord = union(enum) {
+    to_check_word: CapsFsm(.current, CheckWord),
+    exit: CapsFsm(.current, ps.Exit),
+    no_transition: CapsFsm(.current, FindWord),
 
-pub const GST = struct {
-  ...
-  buf: [10] u8 = @splat(0),
-};
-
-///Example
-const Example = enum {
-    exit,
-    a,
-    b,
-    /// A new state `yes_or_no` is defined here
-    yes_or_no,
-
-
-
-    pub fn Wit(val: anytype) type {
-        ...
-    }
-
-    pub const exitST = union(enum) {
-      ...
-    };
-    pub const aST = a_st;
-    pub const bST = b_st;
-    
-    /// The specific implementation of the new state is a function that depends on two state parameters: `yes` and `no`.
-    /// Its semantic is to provide an interactive choice for the user: if the user chooses 'yes', it transitions to the state corresponding to `yes`; if the user chooses 'no', it transitions to the state corresponding to `no`.
-    /// The `sdzx` function here turns a regular enum type into a new, composable type.
-    /// For example, I can use `polystate.sdzx(Example).C(.yes_or_no, &.{ .a, .b })` to represent the state `(yes_or_no, a, b)`.
-    /// I usually write this type as `yes_or_no(a, b)`, which indicates that `yes_or_no` is a special state that requires two concrete state parameters.
-    /// Semantically, `yes_or_no(exit, a)` means: user confirmation is required before exiting. If the user chooses 'yes', it will transition to the `exit` state; if the user chooses 'no', it will transition to the `a` state.
-    /// Similarly, `yes_or_no(yes_or_no(exit, a), a)` means: user confirmation is required twice before exiting. The user must choose 'yes' both times to exit.
-    /// This is what composability means. Please make sure you understand this.
-    pub fn yes_or_noST(yes: polystate.sdzx(@This()), no: polystate.sdzx(@This())) type {
-        return yes_or_no_st(@This(), yes, no, GST);
+    pub fn handler(ctx: *Context) FindWord {
+        switch (ctx.string[0]) {
+            0 => return .exit,
+            ' ', '\t'...'\r' => {
+                ctx.string += 1;
+                return .no_transition;
+            },
+            else => {
+                ctx.word = ctx.string;
+                return .to_check_word;
+            },
+        }
     }
 };
 
-pub const a_st = union(enum) {
-    AddOneThenToB: Example.Wit(Example.b),
-    /// This shows how to build and use a composite message in code.
-    /// For a composite message, it needs to be placed in a tuple. The first state is the function, and the rest are its state parameters.
-    /// Here, `.{ Example.yes_or_no, Example.exit, Example.a }` represents the state: `yes_or_no(exit, a)`.
-    Exit: Example.Wit(.{ Example.yes_or_no, Example.exit, Example.a }),
-    /// Similarly, `.{ Example.yes_or_no, .{Example.yes_or_no, Example.exit, Example.a}, Example.a }` can be used to represent the state: `yes_or_no(yes_or_no(exit, a), a)`.
-    ...
+pub const CheckWord = union(enum) {
+    to_find_word: CapsFsm(.current, FindWord),
+    to_capitalize: CapsFsm(.next, Capitalize),
+    exit: CapsFsm(.current, ps.Exit),
+    no_transition: CapsFsm(.current, CheckWord),
+
+    pub fn handler(ctx: *Context) CheckWord {
+        switch (ctx.string[0]) {
+            0 => return .exit,
+            ' ', '\t'...'\r' => {
+                ctx.string += 1;
+                return .to_find_word;
+            },
+            '_' => {
+                ctx.string = ctx.word;
+                return .to_capitalize;
+            },
+            else => {
+                ctx.string += 1;
+                return .no_transition;
+            },
+        }
+    }
 };
 
-pub const b_st = union(enum) {
-  ...
+pub const Capitalize = union(enum) {
+    to_find_word: CapsFsm(.current, FindWord),
+    exit: CapsFsm(.current, ps.Exit),
+    no_transition: CapsFsm(.current, Capitalize),
+
+    pub fn handler(ctx: *Context) Capitalize {
+        switch (ctx.string[0]) {
+            0 => return .exit,
+            ' ', '\t'...'\r' => {
+                ctx.string += 1;
+                return .to_find_word;
+            },
+            else => {
+                ctx.string[0] = std.ascii.toUpper(ctx.string[0]);
+                ctx.string += 1;
+                return .no_transition;
+            },
+        }
+    }
 };
 
-/// Specific implementation of the `yes_or_no` state.
-/// First, it's a function that takes four parameters: `FST`, `GST1`, `yes`, and `no`. Note that its implementation is independent of `Example` itself.
-/// This is a generic implementation, independent of any specific state machine. You can use this code in any state machine.
-/// I will explain this code again from four aspects: state, message, message handler function, and message generator function.
-pub fn yes_or_no_st(
-    FST: type,
-    GST1: type,
-    yes: polystate.sdzx(FST),
-    no: polystate.sdzx(FST),
-) type {
-    /// 1. State
-    /// Its specific state is: `polystate.sdzx(FST).C(FST.yes_or_no, &.{ yes, no })`.
-    /// It requires two parameters, `yes` and `no`, and also needs to ensure that `FST` definitely has a `yes_or_no` state.
-    return union(enum) {
-        /// 2. Message
-        /// There are three messages here. Special attention should be paid to `Retry`, which represents the semantic of re-entering due to an input error.
-        Yes: Wit(yes),
-        No: Wit(no),
-        /// Note the state being constructed here; it points to itself.
-        Retry: Wit(polystate.sdzx(FST).C(FST.yes_or_no, &.{ yes, no })),
+pub const Context = struct {
+    string: [*:0]u8,
+    word: [*:0]u8,
 
-        fn Wit(val: polystate.sdzx(FST)) type {
-            return polystate.Witness(FST, GST1, null, val);
-        }
+    pub fn init(string: [:0]u8) Context {
+        return .{
+            .string = string.ptr,
+            .word = string.ptr,
+        };
+    }
+};
 
-        /// 3. Message Handler Function
-        pub fn handler(gst: *GST1) void {
-            switch (genMsg(gst)) {
-                .Yes => |wit| wit.handler(gst),
-                .No => |wit| wit.handler(gst),
-                .Retry => |wit| wit.handler(gst),
-            }
-        }
-
-        const stdIn = std.io.getStdIn().reader();
-        
-        /// 4. Message Generator Function
-        /// Reads a string from `stdIn`. If the string is "y", it returns the message `.Yes`. If the string is "n", it returns the message `.No`.
-        /// In other cases, it returns `.Retry`.
-        fn genMsg(gst: *GST) @This() {
-            std.debug.print(
-                \\Yes Or No:
-                \\y={}, n={}
-                \\
-            ,
-                .{ yes, no },
-            );
-
-            const st = stdIn.readUntilDelimiter(&gst.buf, '\n') catch |err| {
-                std.debug.print("Input error: {any}, retry\n", .{err});
-                return .Retry;
-            };
-
-            if (std.mem.eql(u8, st, "y")) {
-                return .Yes;
-            } else if (std.mem.eql(u8, st, "n")) {
-                return .No;
-            } else {
-                std.debug.print("Error input: {s}\n", .{st});
-                return .Retry;
-            }
-        }
-    };
+pub fn CapsFsm(comptime method: ps.Method, comptime State: type) type {
+    return ps.FSM("Underscore Capitalizer", .suspendable, Context, null, method, State);
 }
-```
-This example clearly demonstrates how to achieve a composable state machine through type composition.
 
-## Polystate in Practice
+pub fn main() void {
+    const StartingFsmState = CapsFsm(.current, FindWord);
 
-### 1. [Combining `checkPin` to Express Complex Logic](https://github.com/sdzx-1/polystate-examples/blob/main/src/exe-atm.zig)
+    const Runner = ps.Runner(99, true, StartingFsmState);
 
-Imagine an ATM. When we are in the `checkPin` state, the user is required to enter a PIN from an external source. If the PIN is correct, it sends a `Successed` message and transitions to the state specified by the `success` parameter. If it's incorrect, it sends a `Failed` message and transitions to the state specified by the `failed` parameter.
+    var string_backing =
+        \\capitalize_me 
+        \\DontCapitalizeMe 
+        \\ineedcaps_  _IAlsoNeedCaps idontneedcaps
+        \\_/\o_o/\_ <-- wide_eyed
+    .*;
+    const string: [:0]u8 = &string_backing;
 
-A common requirement is: the user can try to enter the PIN a maximum of three times. If all three attempts fail, the card should be ejected, and the machine should return to the initial screen.
+    var ctx: Context = .init(string);
 
-"A maximum of three times" here is an extremely important security requirement that should not be easily changed.
+    std.debug.print("Without caps:\n{s}\n\n", .{string});
 
-By composing states, we can naturally implement this effect. We design `checkPin` as a generic state, and then in the declaration of state transitions, we precisely describe this business logic by composing `checkPin`.
+    var state_id = Runner.idFromState(StartingFsmState.State);
 
-```zig
-  pub fn checkPinST(success: polystate.sdzx(Atm), failed: polystate.sdzx(Atm)) type {
-        return union(enum) {
-            Successed: polystate.Witness(Atm, GST, null, success),
-            Failed: polystate.Witness(Atm, GST, null, failed),
+    while (Runner.runHandler(state_id, &ctx)) |new_state_id| {
+        state_id = new_state_id;
 
-            ...
-            ...
+        var word_len: usize = 0;
+        while (ctx.word[word_len] != 0 and !std.ascii.isWhitespace(ctx.word[word_len])) {
+            word_len += 1;
         }
-  }
 
-    pub const readyST = union(enum) {
-        /// By nesting the declaration of `checkPin` three times, we ensure that the PIN check happens at most three times. This precisely describes the behavior we need.
-        /// This demonstrates how to determine the program's overall behavior through compositional declarations.
-        InsertCard: Wit(.{ Atm.checkPin, Atm.session, .{ Atm.checkPin, Atm.session, .{ Atm.checkPin, Atm.session, Atm.ready } } }),
-        Exit: Wit(.{ Atm.are_you_sure, Atm.exit, Atm.ready }),
+        const word = ctx.word[0..word_len];
 
-        ...
+        std.debug.print("capitalizing word: {s}\n", .{word});
     }
 
-```
-We can directly see its overall logic through the state diagram, and [`polystate` can automatically generate all of this](https://github.com/sdzx-1/polystate-examples/blob/fecaffb5b7f5eba09c9428c18f1cd97e7ee09e71/src/exe-atm.zig#L19).
-
-![atm-graph](https://github.com/sdzx-1/polystate-examples/raw/main/data/atm_graph.svg)
-
-### 2. [Implementing and Reusing Selection Semantics](https://github.com/sdzx-1/ray-game/blob/master/src/select.zig)
-
-I used `raylib` to implement a generic "selection" semantic: interactive selection via the mouse.
-
-The specific behavior of selection is composed of three generic states (`select`, `inside`, `hover`) and their associated messages.
-
-These states and messages implement: selecting an element with the mouse and how to respond when the mouse hovers over it.
-```zig
-
-pub fn selectST(
-    FST: type,
-    GST: type,
-    enter_fn: ?fn (polystate.sdzx(FST), *GST) void,
-    back: polystate.sdzx(FST),
-    selected: polystate.sdzx(FST),
-) type {
-    const cst = polystate.sdzx_to_cst(FST, selected);
-    const SDZX = polystate.sdzx(FST);
-
-    return union(enum) {
-        // zig fmt: off
-        ToBack  : polystate.Witness(FST, GST, enter_fn, back),
-        ToInside: polystate.Witness(FST, GST, enter_fn, SDZX.C(FST.inside, &.{ back, selected })),
-        // zig fmt: on
-       ...
-    };
+    std.debug.print("\nWith caps:\n{s}\n", .{string});
 }
-
-pub fn insideST(
-    FST: type,
-    GST: type,
-    enter_fn: ?fn (polystate.sdzx(FST), *GST) void,
-    back: polystate.sdzx(FST),
-    selected: polystate.sdzx(FST),
-) type {
-    const cst = polystate.sdzx_to_cst(FST, selected);
-    const SDZX = polystate.sdzx(FST);
-
-    return union(enum) {
-        // zig fmt: off
-        ToBack    : polystate.Witness(FST, GST, enter_fn, back),
-        ToOutside : polystate.Witness(FST, GST, enter_fn, SDZX.C(FST.select, &.{ back, selected })),
-        ToHover   : polystate.Witness(FST, GST, enter_fn, SDZX.C(FST.hover, &.{ back, selected })),
-        ToSelected: polystate.Witness(FST, GST, enter_fn, selected),
-        // zig fmt: on
-       ...
-    };
-}
-
-pub fn hoverST(
-    FST: type,
-    GST: type,
-    enter_fn: ?fn (polystate.sdzx(FST), *GST) void,
-    back: polystate.sdzx(FST),
-    selected: polystate.sdzx(FST),
-) type {
-    const cst = polystate.sdzx_to_cst(FST, selected);
-    const SDZX = polystate.sdzx(FST);
-
-    return union(enum) {
-        // zig fmt: off
-        ToBack    : polystate.Witness(FST, GST, enter_fn, back),
-        ToOutside : polystate.Witness(FST, GST, enter_fn, SDZX.C(FST.select, &.{ back, selected })),
-        ToInside  : polystate.Witness(FST, GST, enter_fn, SDZX.C(FST.inside, &.{ back, selected })),
-        ToSelected: polystate.Witness(FST, GST, enter_fn, selected),
-        // zig fmt: on
-
-       ...
-    };
-}
-
 ```
 
-In the [`ray-game`](https://github.com/sdzx-1/ray-game) project, the "selection" semantic was reused at least eight times, which greatly reduced code and improved correctness.
+We've updated our `CapsFsm` wrapper to take an additional parameter of type `ps.Method`, which has two possible values: `current` and `next`.
 
-An interesting example in this project is "two-stage selection": you first need to select a building, then select a grid location to place it. The choice of building also constrains the choice of location. ![select_twict](data/select_twice.gif)
+- If a transition has the method `current`, the state machine will continue execution after transitioning.
+- If a transition has the method `next`, the state machine will suspend execution after transitioning.
 
-Such semantics can be concisely expressed as:
-```zig
-pub const placeST = union(enum) {
-    ToPlay: Wit(.{ Example.select, Example.play, .{ Example.select, Example.play, Example.place } }),
-    ...
-};
+A transition's `ps.Method` basically answers the following question: "Should I set this new state as my current state and keep going (`current`), or save this new state for the next execution (`next`)?".
 
-```
-This code describes our intent with extreme conciseness. But if you look at the state diagram, you will find that the actual state transitions it corresponds to are quite complex.
+In addition to updating our state transitions with `current` or `next`, we also need to change how we use `runHandler`.
 
-![graph](data/graph.png)
+Before, since our state machine was `not_suspendable`, `runHandler` didn't return anything and only needed to be called once. Now, since our state machine is `suspendable`, `runHandler` only runs the state machine until it is suspended, and returns the ID of the state it was suspended on.
 
-Through simple declarations, we have nestedly reused complex "selection" semantics. This is a huge victory!
+So, we now call `runHandler` in a loop, passing in the current state ID and using the result as the new state ID. We continue this until `runHandler` returns `null`, indicating that the state machine has completed (reached ps.Exit).
 
-[The complete code for all of this is right here](https://github.com/sdzx-1/ray-game/blob/587f1698cb717c393c3680060a057ac8b02d89c2/src/play.zig#L33), in about 130 lines of code. 
+## Higher-order states and composability
+If you've read the previous sections where we cover the basics of Polystate, you may feel like it's a bit overkill to use a library instead of just implementing your FSM manually. After all, it can seem like Polystate does little more than provide a convenient framework for structuring state machines.
+
+This changes when you start using higher-order states.
+
+A higher-order state is a function that takes states as parameters and returns a new state, AKA a 'state function'. Since states are represented as types (specifically, tagged unions), a state function is no different than any other Zig generic: a type-returning function that takes types as parameters.
+
+While being simple at their core, higher-order states allow endless ways to construct, compose, and re-use transition logic among your states. Consider the following example:
+
+<< TODO: finish README >>
