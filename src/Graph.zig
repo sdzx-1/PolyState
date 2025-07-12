@@ -39,14 +39,12 @@ pub fn generateDot(
 
     { //state graph
         try writer.print(
-            \\  subgraph cluster_{0s} {{
-            \\    label = "{0s}_graph";
+            \\  subgraph cluster_transitions {{
+            \\    label = "State transitions for {0s}";
             \\    labelloc = "t";
             \\    labeljust = "c";
             \\
-        , .{
-            self.name,
-        });
+        , .{self.name});
 
         for (self.edges.items) |edge| {
             try writer.print(
@@ -74,8 +72,8 @@ pub fn generateDot(
     { //all_state
 
         try writer.print(
-            \\  subgraph cluster_{0s}_state {{
-            \\    label = "{0s}_state";
+            \\  subgraph cluster_names {{
+            \\    label = "State names for {0s}";
             \\    labelloc = "t";
             \\    labeljust = "c";
             \\    all_node [shape=plaintext, label=<
