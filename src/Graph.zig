@@ -256,12 +256,50 @@ pub fn initWithFsm(allocator: std.mem.Allocator, comptime FsmState: type, compti
         }
     }
 
+    try deduplicateNameSubstrings(arena_allocator, &nodes);
+
     return .{
         .arena = arena,
         .edges = edges,
         .name = FsmState.name,
         .nodes = nodes,
     };
+}
+
+// Somewhat inefficient, consider optimizing later.
+fn deduplicateNameSubstrings(arena_allocator: std.mem.Allocator, nodes: *std.ArrayListUnmanaged(Node)) !void {
+    var new_nodes: std.ArrayListUnmanaged(Node) = try .initCapacity(arena_allocator, nodes.items.len);
+    new_nodes.expandToCapacity();
+
+    std.mem.sort(Node, nodes.items, {}, struct {
+        pub fn lessThan(_: void, lhs: Node, rhs: Node) bool {
+            return lhs.name.len > rhs.name.len;
+        }
+    }.lessThan);
+
+    for (nodes.items, new_nodes.items) |node, *new_node| {
+        new_node.* = node;
+
+        for (nodes.items) |other_node| {
+            if (node.id != other_node.id) {
+                new_node.name = try std.mem.replaceOwned(
+                    u8,
+                    arena_allocator,
+                    new_node.name,
+                    other_node.name,
+                    try std.fmt.allocPrint(arena_allocator, "{{{}}}", .{other_node.id}),
+                );
+            }
+        }
+    }
+
+    nodes.* = new_nodes;
+
+    std.mem.sort(Node, nodes.items, {}, struct {
+        pub fn lessThan(_: void, lhs: Node, rhs: Node) bool {
+            return lhs.id < rhs.id;
+        }
+    }.lessThan);
 }
 
 pub fn deinit(self: *Graph) void {
