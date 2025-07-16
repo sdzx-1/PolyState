@@ -28,6 +28,7 @@ pub fn build(b: *std.Build) void {
 pub const GraphMode = enum {
     graphviz,
     mermaid,
+    json,
 };
 
 pub fn addGraphFile(
@@ -56,6 +57,7 @@ pub fn addGraphFile(
     , .{ module_name, max_len, switch (graph_mode) {
         .graphviz => "generateDot",
         .mermaid => "generateMermaid",
+        .json => "generateJson",
     } }) catch @panic("OOM");
 
     const opt_mod = b.createModule(.{
@@ -91,6 +93,7 @@ pub fn addInstallGraphFile(
     const output_name = std.mem.concat(b.allocator, u8, &.{ module_name, switch (graph_mode) {
         .graphviz => ".dot",
         .mermaid => ".mmd",
+        .json => ".json",
     } }) catch @panic("OOM");
     return b.addInstallFileWithDir(dot_file, install_dir, output_name);
 }
