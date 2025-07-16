@@ -28,6 +28,22 @@ pub const Color = enum {
     blue,
 };
 
+pub const Save = struct {
+    name: []const u8,
+    nodes: []const Node,
+    edges: []const Edge,
+};
+
+pub fn generateJson(self: @This(), writer: anytype) !void {
+    const save: Save = .{
+        .name = self.name,
+        .nodes = self.nodes.items,
+        .edges = self.edges.items,
+    };
+
+    try std.json.stringify(save, .{ .whitespace = .indent_2 }, writer);
+}
+
 pub fn generateDot(
     self: @This(),
     writer: anytype,
