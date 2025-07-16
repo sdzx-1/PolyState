@@ -39,6 +39,9 @@ Our state machine will contain three states: `FindWord`, `CheckWord`, and `Capit
 - `Capitalize` capitalizes the word. `Capitalize` transitions back to `FindWord` once the word is capitalized.
 
 Here's our state machine implemented with Polystate:
+<details open>
+<summary><code>main.zig</code></summary>
+
 ```zig
 const std = @import("std");
 const ps = @import("polystate");
@@ -150,6 +153,10 @@ pub fn main() void {
 }
 ```
 
+</details>
+
+---
+
 As you can see, each of our states is represented by a tagged union. These unions have two main components: their fields and their `handler` function.
 
 Rules for the fields:
@@ -175,6 +182,11 @@ In our previous example, our state machine's mode was `not_suspendable`. What if
 However, `suspendable` adds an additional requirement to your state transitions: they must tell the state machine whether or not to suspend after transitioning.
 
 This is our capitalization state machine, updated such that every time a word is chosen to be capitalized, we suspend execution and print the chosen word:
+
+
+<details>
+<summary><code>main.zig</code></summary>
+
 ```zig
 const std = @import("std");
 const ps = @import("polystate");
@@ -296,6 +308,10 @@ pub fn main() void {
     std.debug.print("\nWith caps:\n{s}\n", .{string});
 }
 ```
+
+</details>
+
+---
 
 We've updated our `CapsFsm` wrapper to take an additional parameter of type `ps.Method`, which has two possible values: `current` and `next`.
 
