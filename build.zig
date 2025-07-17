@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const build_examples = b.option(bool, "examples", "Build examples") orelse false;
 
     const polystate = b.addModule("root", .{
         .root_source_file = b.path("src/polystate.zig"),
@@ -24,7 +25,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
 
-    addExampleGraphsStep(b, target, polystate);
+    if (build_examples) addExampleGraphsStep(b, target, polystate);
 }
 
 fn addExampleGraphsStep(
