@@ -73,7 +73,7 @@ fn addGraphToStep(
     install_dir: std.Build.InstallDir,
     dst_rel_path: []const u8,
 ) void {
-    const graph_file = addGraphFileWithPolystateMod(b, "graph", mod, 100, .graphviz, polystate, target);
+    const graph_file = addGraphFile(b, "graph", mod, 100, .graphviz, polystate, target);
 
     const dot_cmd = b.addSystemCommand(&.{"dot"});
 
@@ -88,54 +88,6 @@ fn addGraphToStep(
     step.dependOn(&install_graph_svg.step);
 }
 
-// TODO: remove this function and make `addGraphFile` take a `polystate_mod` module instead of a `polystate` dependency.
-fn addGraphFileWithPolystateMod(
-    b: *std.Build,
-    module_name: []const u8,
-    module: *std.Build.Module,
-    max_len: usize,
-    graph_mode: GraphMode,
-    polystate_mod: *std.Build.Module,
-    target: std.Build.ResolvedTarget,
-) std.Build.LazyPath {
-    const options = b.addOptions();
-    const writer = options.contents.writer();
-    writer.print(
-        \\const std = @import("std");
-        \\const ps = @import("polystate");
-        \\const Target = @import("{s}");
-        \\pub fn main() !void {{
-        \\  var gpa_instance = std.heap.GeneralPurposeAllocator(.{{}}){{}};
-        \\  const gpa = gpa_instance.allocator();
-        \\  var graph = try ps.Graph.initWithFsm(gpa, Target.EnterFsmState, {d});
-        \\  defer graph.deinit();
-        \\  const writer = std.io.getStdOut().writer();
-        \\  try graph.{s}(writer);
-        \\}}
-    , .{ module_name, max_len, switch (graph_mode) {
-        .graphviz => "generateDot",
-        .mermaid => "generateMermaid",
-        .json => "generateJson",
-    } }) catch @panic("OOM");
-
-    const opt_mod = b.createModule(.{
-        .root_source_file = options.getOutput(),
-        .target = target,
-        .imports = &.{
-            .{ .name = "polystate", .module = polystate_mod },
-            .{ .name = b.allocator.dupe(u8, module_name) catch @panic("OOM"), .module = module },
-        },
-    });
-
-    const gen_exe_name = std.mem.concat(b.allocator, u8, &.{ "_generate_graph_for_", module_name }) catch @panic("OOM");
-    const opt_exe = b.addExecutable(.{
-        .name = gen_exe_name,
-        .root_module = opt_mod,
-    });
-    const run = b.addRunArtifact(opt_exe);
-    return run.captureStdOut();
-}
-
 pub const GraphMode = enum {
     graphviz,
     mermaid,
@@ -148,7 +100,7 @@ pub fn addGraphFile(
     module: *std.Build.Module,
     max_len: usize,
     graph_mode: GraphMode,
-    polystate: *std.Build.Dependency,
+    polystate: *std.Build.Module,
     target: std.Build.ResolvedTarget,
 ) std.Build.LazyPath {
     const options = b.addOptions();
@@ -175,7 +127,7 @@ pub fn addGraphFile(
         .root_source_file = options.getOutput(),
         .target = target,
         .imports = &.{
-            .{ .name = "polystate", .module = polystate.module("root") },
+            .{ .name = "polystate", .module = polystate },
             .{ .name = b.allocator.dupe(u8, module_name) catch @panic("OOM"), .module = module },
         },
     });
