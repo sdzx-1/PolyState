@@ -157,6 +157,15 @@ pub fn main() void {
 
 ---
 
+<details open>
+<summary>Transition graph for <code>main.zig</code></summary>
+
+![graph](./examples/getting-started/graph.svg)
+
+</details>
+
+---
+
 As you can see, each of our states is represented by a tagged union. These unions have two main components: their fields and their `handler` function.
 
 Rules for the fields:
@@ -308,6 +317,15 @@ pub fn main() void {
     std.debug.print("\nWith caps:\n{s}\n", .{string});
 }
 ```
+
+</details>
+
+---
+
+<details>
+<summary>Transition graph for <code>main.zig</code></summary>
+
+![graph](./examples/suspendable-state-machines/graph.svg)
 
 </details>
 
@@ -744,6 +762,15 @@ pub fn main() !void {
 }
 
 ```
+
+</details>
+
+---
+
+<details>
+<summary>Transition graph for <code>main.zig</code></summary>
+
+![graph](./examples/higher-order-states/graph.svg)
 
 </details>
 
