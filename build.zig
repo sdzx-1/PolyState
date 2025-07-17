@@ -147,7 +147,7 @@ pub fn addInstallGraphFile(
     module: *std.Build.Module,
     max_len: usize,
     graph_mode: GraphMode,
-    polystate: *std.Build.Dependency,
+    polystate: *std.Build.Module,
     target: std.Build.ResolvedTarget,
     install_dir: std.Build.InstallDir,
 ) *std.Build.Step.InstallFile {
