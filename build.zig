@@ -3,20 +3,12 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const build_examples = b.option(bool, "examples", "Build examples") orelse false;
 
     const polystate = b.addModule("root", .{
         .root_source_file = b.path("src/polystate.zig"),
         .target = target,
         .optimize = optimize,
     });
-
-    const lib = b.addStaticLibrary(.{
-        .name = "polystate",
-        .root_module = polystate,
-    });
-
-    b.installArtifact(lib);
 
     const mod_tests = b.addTest(.{
         .root_module = polystate,
@@ -25,7 +17,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
 
-    if (build_examples) addExampleGraphsStep(b, target, polystate);
+    addExampleGraphsStep(b, target, polystate);
 }
 
 fn addExampleGraphsStep(
@@ -35,9 +27,15 @@ fn addExampleGraphsStep(
 ) void {
     const graph_step = b.step("example-graphs", "Generate SVG graphs for the README examples");
 
-    const graph_install_dir: std.Build.InstallDir = .{ .custom = "../examples" };
+    const examples_dir_name = "examples";
 
-    var examples_dir = std.fs.cwd().openDir("examples", .{ .iterate = true }) catch |err| std.debug.panic("{}", .{err});
+    const graph_install_path = b.build_root.handle.realpathAlloc(b.allocator, examples_dir_name) catch |err| std.debug.panic("{}", .{err});
+
+    const graph_install_path_relative = std.fs.path.relative(b.allocator, b.install_path, graph_install_path) catch |err| std.debug.panic("{}", .{err});
+
+    const graph_install_dir: std.Build.InstallDir = .{ .custom = graph_install_path_relative };
+
+    var examples_dir = b.build_root.handle.openDir(examples_dir_name, .{ .iterate = true }) catch |err| std.debug.panic("{}", .{err});
     defer examples_dir.close();
 
     var iterator = examples_dir.iterate();
@@ -48,7 +46,7 @@ fn addExampleGraphsStep(
             const mod = b.addModule(
                 example_name,
                 .{
-                    .root_source_file = b.path(b.pathJoin(&.{ "examples", example_name, "main.zig" })),
+                    .root_source_file = b.path(b.pathJoin(&.{ examples_dir_name, example_name, "main.zig" })),
 
                     .target = target,
                     .imports = &.{
