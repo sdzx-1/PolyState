@@ -29,9 +29,9 @@ fn addExampleGraphsStep(
 
     const examples_dir_name = "examples";
 
-    const graph_install_path_string = b.build_root.handle.realpathAlloc(b.allocator, examples_dir_name) catch |err| std.debug.panic("{}", .{err});
+    const graph_install_path = b.build_root.handle.realpathAlloc(b.allocator, examples_dir_name) catch |err| std.debug.panic("{}", .{err});
 
-    const graph_install_path_relative = std.fs.path.relative(b.allocator, b.install_path, graph_install_path_string) catch |err| std.debug.panic("{}", .{err});
+    const graph_install_path_relative = std.fs.path.relative(b.allocator, b.install_path, graph_install_path) catch |err| std.debug.panic("{}", .{err});
 
     const graph_install_dir: std.Build.InstallDir = .{ .custom = graph_install_path_relative };
 
