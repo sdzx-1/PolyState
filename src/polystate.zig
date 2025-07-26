@@ -40,7 +40,7 @@ pub const StateMap = struct {
     states: []const type,
     StateId: type,
 
-    pub fn init(comptime _: usize, comptime FsmState: type) StateMap {
+    pub fn init(comptime FsmState: type) StateMap {
         @setEvalBranchQuota(2000000);
 
         comptime {
@@ -116,13 +116,12 @@ pub const StateMap = struct {
 };
 
 pub fn Runner(
-    comptime _: usize,
     comptime is_inline: bool,
     comptime FsmState: type,
 ) type {
     return struct {
         pub const Context = FsmState.Context;
-        pub const state_map: StateMap = .init(0, FsmState);
+        pub const state_map: StateMap = .init(FsmState);
         pub const StateId = state_map.StateId;
         pub const RetType =
             switch (FsmState.mode) {
@@ -325,10 +324,10 @@ test "polystate suspendable" {
     const StateA = Tmp.Example(.next, Tmp.A);
 
     const allocator = std.testing.allocator;
-    var graph = try Graph.initWithFsm(allocator, StateA, 20);
+    var graph = try Graph.initWithFsm(allocator, StateA);
     defer graph.deinit();
 
-    const ExampleRunner = Runner(20, true, StateA);
+    const ExampleRunner = Runner(true, StateA);
 
     try std.testing.expectEqual(
         graph.nodes.items.len,
@@ -393,10 +392,10 @@ test "polystate not_suspendable" {
     const StateA = Tmp.Example(Tmp.A);
 
     const allocator = std.testing.allocator;
-    var graph = try Graph.initWithFsm(allocator, StateA, 20);
+    var graph = try Graph.initWithFsm(allocator, StateA);
     defer graph.deinit();
 
-    const ExampleRunner = Runner(20, true, StateA);
+    const ExampleRunner = Runner(true, StateA);
 
     try std.testing.expectEqual(
         graph.nodes.items.len,
@@ -482,10 +481,10 @@ test "high state count" {
     const StateA = Tmp.EnterFsmState;
 
     const allocator = std.testing.allocator;
-    var graph = try Graph.initWithFsm(allocator, StateA, 1000);
+    var graph = try Graph.initWithFsm(allocator, StateA);
     defer graph.deinit();
 
-    const ExampleRunner = Runner(1000, true, StateA);
+    const ExampleRunner = Runner(true, StateA);
 
     try std.testing.expectEqual(
         graph.nodes.items.len,

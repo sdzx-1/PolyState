@@ -86,7 +86,7 @@ pub fn CapsFsm(comptime State: type) type {
 pub const EnterFsmState = CapsFsm(FindWord);
 
 pub fn main() void {
-    const Runner = ps.Runner(99, true, EnterFsmState);
+    const Runner = ps.Runner(true, EnterFsmState);
 
     var string_backing =
         \\capitalize_me 

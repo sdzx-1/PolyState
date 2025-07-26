@@ -131,7 +131,7 @@ pub fn CapsFsm(comptime State: type) type {
 pub fn main() void {
     const StartingFsmState = CapsFsm(FindWord);
 
-    const Runner = ps.Runner(99, true, StartingFsmState);
+    const Runner = ps.Runner(true, StartingFsmState);
 
     var string_backing =
         \\capitalize_me 
@@ -285,7 +285,7 @@ pub fn CapsFsm(comptime method: ps.Method, comptime State: type) type {
 pub fn main() void {
     const StartingFsmState = CapsFsm(.current, FindWord);
 
-    const Runner = ps.Runner(99, true, StartingFsmState);
+    const Runner = ps.Runner(true, StartingFsmState);
 
     var string_backing =
         \\capitalize_me 
@@ -730,7 +730,7 @@ pub const EnterFsmState = CapsFsm(
 );
 
 pub fn main() !void {
-    const Runner = ps.Runner(99, true, EnterFsmState);
+    const Runner = ps.Runner(true, EnterFsmState);
 
     var string1_backing =
         \\capitalize_me 
