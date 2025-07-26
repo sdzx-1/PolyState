@@ -1,6 +1,4 @@
 const std = @import("std");
-const Adler32 = std.hash.Adler32;
-const AVL = @import("avl.zig").AVL;
 
 pub const Graph = @import("Graph.zig");
 
@@ -38,36 +36,24 @@ pub fn FSM(
     };
 }
 
-pub fn StateMap(comptime max_len: usize) type {
-    return struct {
-        root: i32 = -1,
-        avl: AVL(max_len, struct { type, usize }) = .{}, // the type is State
-        StateId: type,
+pub const StateMap = struct {
+    states: []const type,
+    StateId: type,
 
-        const Self = @This();
+    pub fn init(comptime FsmState: type) StateMap {
+        @setEvalBranchQuota(2000000);
 
-        pub fn init(comptime FsmState: type) Self {
-            @setEvalBranchQuota(10_000_000);
-            comptime {
-                var res: Self = .{
-                    .root = -1,
-                    .avl = .{},
-                    .StateId = undefined,
-                };
-
-                res.collect(FsmState);
-
-                const state_count = res.avl.len;
-
-                res.StateId = @Type(.{
+        comptime {
+            const states = reachableStates(FsmState);
+            return .{
+                .states = states,
+                .StateId = @Type(.{
                     .@"enum" = .{
-                        .tag_type = std.math.IntFittingRange(0, state_count - 1),
+                        .tag_type = std.math.IntFittingRange(0, states.len - 1),
                         .fields = inner: {
-                            var fields: [state_count]std.builtin.Type.EnumField = undefined;
+                            var fields: [states.len]std.builtin.Type.EnumField = undefined;
 
-                            for (&fields, res.avl.nodes[0..state_count]) |*field, node| {
-                                const State, const state_int = node.data;
-
+                            for (&fields, states, 0..) |*field, State, state_int| {
                                 field.* = .{
                                     .name = @typeName(State),
                                     .value = state_int,
@@ -80,91 +66,62 @@ pub fn StateMap(comptime max_len: usize) type {
                         .decls = &.{},
                         .is_exhaustive = true,
                     },
-                });
-
-                return res;
-            }
-        }
-
-        pub fn StateFromId(comptime self: *const Self, comptime state_id: self.StateId) type {
-            return self.avl.nodes[@intFromEnum(state_id)].data[0];
-        }
-
-        pub fn idFromState(comptime self: *const Self, comptime State: type) self.StateId {
-            if (!@hasField(self.StateId, @typeName(State))) @compileError(std.fmt.comptimePrint(
-                "Can't find State {s}",
-                .{@typeName(State)},
-            ));
-            return @field(self.StateId, @typeName(State));
-        }
-
-        pub fn iterator(comptime self: *const Self) Iterator {
-            return .{
-                .state_map = self,
-                .idx = 0,
+                }),
             };
         }
+    }
 
-        pub const Iterator = struct {
-            state_map: *const Self,
-            idx: usize,
+    pub fn StateFromId(comptime self: StateMap, comptime state_id: self.StateId) type {
+        return self.states[@intFromEnum(state_id)];
+    }
 
-            pub fn next(comptime self: *Iterator) ?type {
-                if (self.idx < self.state_map.avl.len) {
-                    defer self.idx += 1;
-                    return self.state_map.avl.nodes[self.idx].data[0];
-                }
+    pub fn idFromState(comptime self: StateMap, comptime State: type) self.StateId {
+        if (!@hasField(self.StateId, @typeName(State))) @compileError(std.fmt.comptimePrint(
+            "Can't find State {s}",
+            .{@typeName(State)},
+        ));
+        return @field(self.StateId, @typeName(State));
+    }
 
-                return null;
-            }
+    pub fn iterator(comptime self: StateMap) Iterator {
+        return .{
+            .state_map = self,
+            .idx = 0,
         };
+    }
 
-        fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
-            if (comptime !std.mem.eql(u8, b, a)) {
-                const error_str = std.fmt.comptimePrint(
-                    \\The state machine name are inconsistent.
-                    \\You used the state of state machine [{s}] in state machine [{s}]."
-                , .{ b, a });
-                @compileError(error_str);
-            }
-        }
+    pub const Iterator = struct {
+        state_map: StateMap,
+        idx: usize,
 
-        fn collect(comptime self: *Self, comptime FsmState: type) void {
-            const State = FsmState.State;
-            const state_hash = Adler32.hash(@typeName(State));
-            const name = FsmState.name;
-            if (self.avl.search(self.root, state_hash)) |_| {
-                return;
-            } else {
-                const idx = self.avl.len;
-                self.root = self.avl.insert(self.root, state_hash, .{ State, idx });
-                switch (@typeInfo(State)) {
-                    .@"union" => |un| {
-                        inline for (un.fields) |field| {
-                            const NextFsmState = field.type;
-                            if (FsmState.mode != NextFsmState.mode) {
-                                @compileError("The Modes of the two fsm_states are inconsistent!");
-                            }
-                            const new_name = NextFsmState.name;
-                            checkConsistency(new_name, name);
-                            self.collect(NextFsmState);
-                        }
-                    },
-                    else => @compileError("Only support tagged union!"),
-                }
+        pub fn next(comptime self: *Iterator) ?type {
+            if (self.idx < self.state_map.states.len) {
+                defer self.idx += 1;
+                return self.state_map.states[self.idx];
             }
+
+            return null;
         }
     };
-}
+
+    fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
+        if (comptime !std.mem.eql(u8, b, a)) {
+            const error_str = std.fmt.comptimePrint(
+                \\The state machine name are inconsistent.
+                \\You used the state of state machine [{s}] in state machine [{s}]."
+            , .{ b, a });
+            @compileError(error_str);
+        }
+    }
+};
 
 pub fn Runner(
-    comptime max_len: usize,
     comptime is_inline: bool,
     comptime FsmState: type,
 ) type {
     return struct {
         pub const Context = FsmState.Context;
-        pub const state_map: StateMap(max_len) = .init(FsmState);
+        pub const state_map: StateMap = .init(FsmState);
         pub const StateId = state_map.StateId;
         pub const RetType =
             switch (FsmState.mode) {
@@ -224,6 +181,109 @@ pub fn Runner(
     };
 }
 
+pub fn reachableStates(comptime FsmState: type) []const type {
+    comptime {
+        var states: []const type = &.{FsmState.State};
+        var states_stack: []const type = &.{FsmState};
+        var states_set: TypeSet(128) = .init;
+
+        states_set.insert(FsmState.State);
+
+        reachableStatesDepthFirstSearch(FsmState, &states, &states_stack, &states_set);
+
+        return states;
+    }
+}
+
+fn reachableStatesDepthFirstSearch(
+    comptime FsmState: type,
+    comptime states: *[]const type,
+    comptime states_stack: *[]const type,
+    comptime states_set: *TypeSet(128),
+) void {
+    @setEvalBranchQuota(2000000);
+
+    comptime {
+        if (states_stack.len == 0) {
+            return;
+        }
+
+        const CurrentFsmState = states_stack.*[states_stack.len - 1];
+        states_stack.* = states_stack.*[0 .. states_stack.len - 1];
+
+        const CurrentState = CurrentFsmState.State;
+
+        if (!std.mem.eql(u8, CurrentFsmState.name, FsmState.name)) {
+            @compileError(std.fmt.comptimePrint(
+                \\Inconsistent state machine names:
+                \\You used a state from state machine [{s}] in state machine [{s}].
+            , .{ CurrentFsmState.name, FsmState.name }));
+        }
+
+        switch (@typeInfo(CurrentState)) {
+            .@"union" => |un| {
+                for (un.fields) |field| {
+                    const NextFsmState = field.type;
+                    if (CurrentFsmState.mode != NextFsmState.mode) {
+                        @compileError("The Modes of the two fsm_states are inconsistent!");
+                    }
+
+                    const NextState = NextFsmState.State;
+
+                    if (!states_set.has(NextState)) {
+                        states.* = states.* ++ &[_]type{NextState};
+                        states_stack.* = states_stack.* ++ &[_]type{NextFsmState};
+                        states_set.insert(NextState);
+
+                        reachableStatesDepthFirstSearch(FsmState, states, states_stack, states_set);
+                    }
+                }
+            },
+            else => @compileError("Only support tagged union!"),
+        }
+    }
+}
+
+fn TypeSet(comptime bucket_count: usize) type {
+    return struct {
+        buckets: [bucket_count][]const type,
+
+        const Self = @This();
+
+        pub const init: Self = .{
+            .buckets = @splat(&.{}),
+        };
+
+        pub fn insert(comptime self: *Self, comptime Type: type) void {
+            comptime {
+                const hash = std.hash_map.hashString(@typeName(Type));
+
+                self.buckets[hash % bucket_count] = self.buckets[hash % bucket_count] ++ &[_]type{Type};
+            }
+        }
+
+        pub fn has(comptime self: Self, comptime Type: type) bool {
+            comptime {
+                const hash = std.hash_map.hashString(@typeName(Type));
+
+                return std.mem.indexOfScalar(type, self.buckets[hash % bucket_count], Type) != null;
+            }
+        }
+
+        pub fn items(comptime self: Self) []const type {
+            comptime {
+                var res: []const type = &.{};
+
+                for (&self.buckets) |bucket| {
+                    res = res ++ bucket;
+                }
+
+                return res;
+            }
+        }
+    };
+}
+
 test "polystate suspendable" {
     const Context = struct {
         a: i32,
@@ -264,14 +324,14 @@ test "polystate suspendable" {
     const StateA = Tmp.Example(.next, Tmp.A);
 
     const allocator = std.testing.allocator;
-    var graph = try Graph.initWithFsm(allocator, StateA, 20);
+    var graph = try Graph.initWithFsm(allocator, StateA);
     defer graph.deinit();
 
-    const ExampleRunner = Runner(20, true, StateA);
+    const ExampleRunner = Runner(true, StateA);
 
     try std.testing.expectEqual(
         graph.nodes.items.len,
-        ExampleRunner.state_map.avl.len,
+        ExampleRunner.state_map.states.len,
     );
 
     // rand
@@ -332,14 +392,14 @@ test "polystate not_suspendable" {
     const StateA = Tmp.Example(Tmp.A);
 
     const allocator = std.testing.allocator;
-    var graph = try Graph.initWithFsm(allocator, StateA, 20);
+    var graph = try Graph.initWithFsm(allocator, StateA);
     defer graph.deinit();
 
-    const ExampleRunner = Runner(20, true, StateA);
+    const ExampleRunner = Runner(true, StateA);
 
     try std.testing.expectEqual(
         graph.nodes.items.len,
-        ExampleRunner.state_map.avl.len,
+        ExampleRunner.state_map.states.len,
     );
 
     // rand
@@ -356,4 +416,81 @@ test "polystate not_suspendable" {
         try std.testing.expectEqual(max_a, ctx.a);
         try std.testing.expectEqual(max_a, ctx.b);
     }
+}
+
+test "high state count" {
+    const Context = struct {};
+
+    const Tmp = struct {
+        pub fn Example(Current: type) type {
+            return FSM("Example", .not_suspendable, Context, null, {}, Current);
+        }
+
+        pub fn Dummy(comptime Next: type, comptime int: comptime_int) type {
+            return union(enum) {
+                to_next: Example(Next),
+
+                pub const int_decl = int;
+
+                pub fn handler(_: *Context) @This() {
+                    return .to_next;
+                }
+            };
+        }
+
+        pub fn Nested(comptime int: comptime_int) type {
+            @setEvalBranchQuota(2000000);
+
+            comptime {
+                var State = Exit;
+                for (0..20) |_| {
+                    State = Dummy(State, int);
+                }
+                return State;
+            }
+        }
+
+        pub const EnterFsmState = Example(union(enum) {
+            to_1: Example(Nested(1)),
+            to_2: Example(Nested(2)),
+            to_3: Example(Nested(3)),
+            to_4: Example(Nested(4)),
+            to_5: Example(Nested(5)),
+            to_6: Example(Nested(6)),
+            to_7: Example(Nested(7)),
+            to_8: Example(Nested(8)),
+            to_9: Example(Nested(9)),
+            to_10: Example(Nested(10)),
+            to_11: Example(Nested(11)),
+            to_12: Example(Nested(12)),
+            to_13: Example(Nested(13)),
+            to_14: Example(Nested(14)),
+            to_15: Example(Nested(15)),
+            to_16: Example(Nested(16)),
+            to_17: Example(Nested(17)),
+            to_18: Example(Nested(18)),
+            to_19: Example(Nested(19)),
+            to_20: Example(Nested(20)),
+
+            pub fn handler(_: *Context) @This() {
+                return .to_1;
+            }
+        });
+    };
+
+    const StateA = Tmp.EnterFsmState;
+
+    const allocator = std.testing.allocator;
+    var graph = try Graph.initWithFsm(allocator, StateA);
+    defer graph.deinit();
+
+    const ExampleRunner = Runner(true, StateA);
+
+    try std.testing.expectEqual(
+        graph.nodes.items.len,
+        ExampleRunner.state_map.states.len,
+    );
+
+    var ctx: Context = .{};
+    ExampleRunner.runHandler(ExampleRunner.idFromState(Tmp.EnterFsmState.State), &ctx);
 }

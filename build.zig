@@ -72,7 +72,7 @@ fn addGraphToStep(
     install_dir: std.Build.InstallDir,
     dst_rel_path: []const u8,
 ) void {
-    const graph_file = addGraphFile(b, "graph", mod, 100, .graphviz, polystate, target);
+    const graph_file = addGraphFile(b, "graph", mod, .graphviz, polystate, target);
 
     const dot_cmd = b.addSystemCommand(&.{"dot"});
 
@@ -97,7 +97,6 @@ pub fn addGraphFile(
     b: *std.Build,
     module_name: []const u8,
     module: *std.Build.Module,
-    max_len: usize,
     graph_mode: GraphMode,
     polystate: *std.Build.Module,
     target: std.Build.ResolvedTarget,
@@ -111,12 +110,12 @@ pub fn addGraphFile(
         \\pub fn main() !void {{
         \\  var gpa_instance = std.heap.GeneralPurposeAllocator(.{{}}){{}};
         \\  const gpa = gpa_instance.allocator();
-        \\  var graph = try ps.Graph.initWithFsm(gpa, Target.EnterFsmState, {d});
+        \\  var graph = try ps.Graph.initWithFsm(gpa, Target.EnterFsmState);
         \\  defer graph.deinit();
         \\  const writer = std.io.getStdOut().writer();
         \\  try graph.{s}(writer);
         \\}}
-    , .{ module_name, max_len, switch (graph_mode) {
+    , .{ module_name, switch (graph_mode) {
         .graphviz => "generateDot",
         .mermaid => "generateMermaid",
         .json => "generateJson",
@@ -144,13 +143,12 @@ pub fn addInstallGraphFile(
     b: *std.Build,
     module_name: []const u8,
     module: *std.Build.Module,
-    max_len: usize,
     graph_mode: GraphMode,
     polystate: *std.Build.Module,
     target: std.Build.ResolvedTarget,
     install_dir: std.Build.InstallDir,
 ) *std.Build.Step.InstallFile {
-    const dot_file = addGraphFile(b, module_name, module, max_len, graph_mode, polystate, target);
+    const dot_file = addGraphFile(b, module_name, module, graph_mode, polystate, target);
 
     const output_name = std.mem.concat(b.allocator, u8, &.{ module_name, switch (graph_mode) {
         .graphviz => ".dot",

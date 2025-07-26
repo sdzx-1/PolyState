@@ -228,7 +228,7 @@ pub fn generateMermaid(
     }
 }
 
-pub fn initWithFsm(allocator: std.mem.Allocator, comptime FsmState: type, comptime max_len: usize) !Graph {
+pub fn initWithFsm(allocator: std.mem.Allocator, comptime FsmState: type) !Graph {
     @setEvalBranchQuota(2000000);
 
     var arena: std.heap.ArenaAllocator = .init(allocator);
@@ -239,7 +239,7 @@ pub fn initWithFsm(allocator: std.mem.Allocator, comptime FsmState: type, compti
     var nodes: std.ArrayListUnmanaged(Node) = .empty;
     var edges: std.ArrayListUnmanaged(Edge) = .empty;
 
-    const state_map: ps.StateMap(max_len) = comptime .init(FsmState);
+    const state_map: ps.StateMap = comptime .init(FsmState);
 
     comptime var state_map_iterator = state_map.iterator();
     comptime var state_idx: u32 = 0;
