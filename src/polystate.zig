@@ -41,7 +41,7 @@ pub const StateMap = struct {
     StateId: type,
 
     pub fn init(comptime FsmState: type) StateMap {
-        @setEvalBranchQuota(2000000);
+        @setEvalBranchQuota(20_000_000);
 
         comptime {
             const states = reachableStates(FsmState);
@@ -103,16 +103,6 @@ pub const StateMap = struct {
             return null;
         }
     };
-
-    fn checkConsistency(comptime b: []const u8, comptime a: []const u8) void {
-        if (comptime !std.mem.eql(u8, b, a)) {
-            const error_str = std.fmt.comptimePrint(
-                \\The state machine name are inconsistent.
-                \\You used the state of state machine [{s}] in state machine [{s}]."
-            , .{ b, a });
-            @compileError(error_str);
-        }
-    }
 };
 
 pub fn Runner(
@@ -201,7 +191,7 @@ fn reachableStatesDepthFirstSearch(
     comptime states_stack: *[]const type,
     comptime states_set: *TypeSet(128),
 ) void {
-    @setEvalBranchQuota(2000000);
+    @setEvalBranchQuota(20_000_000);
 
     comptime {
         if (states_stack.len == 0) {
@@ -416,81 +406,4 @@ test "polystate not_suspendable" {
         try std.testing.expectEqual(max_a, ctx.a);
         try std.testing.expectEqual(max_a, ctx.b);
     }
-}
-
-test "high state count" {
-    const Context = struct {};
-
-    const Tmp = struct {
-        pub fn Example(Current: type) type {
-            return FSM("Example", .not_suspendable, Context, null, {}, Current);
-        }
-
-        pub fn Dummy(comptime Next: type, comptime int: comptime_int) type {
-            return union(enum) {
-                to_next: Example(Next),
-
-                pub const int_decl = int;
-
-                pub fn handler(_: *Context) @This() {
-                    return .to_next;
-                }
-            };
-        }
-
-        pub fn Nested(comptime int: comptime_int) type {
-            @setEvalBranchQuota(2000000);
-
-            comptime {
-                var State = Exit;
-                for (0..20) |_| {
-                    State = Dummy(State, int);
-                }
-                return State;
-            }
-        }
-
-        pub const EnterFsmState = Example(union(enum) {
-            to_1: Example(Nested(1)),
-            to_2: Example(Nested(2)),
-            to_3: Example(Nested(3)),
-            to_4: Example(Nested(4)),
-            to_5: Example(Nested(5)),
-            to_6: Example(Nested(6)),
-            to_7: Example(Nested(7)),
-            to_8: Example(Nested(8)),
-            to_9: Example(Nested(9)),
-            to_10: Example(Nested(10)),
-            to_11: Example(Nested(11)),
-            to_12: Example(Nested(12)),
-            to_13: Example(Nested(13)),
-            to_14: Example(Nested(14)),
-            to_15: Example(Nested(15)),
-            to_16: Example(Nested(16)),
-            to_17: Example(Nested(17)),
-            to_18: Example(Nested(18)),
-            to_19: Example(Nested(19)),
-            to_20: Example(Nested(20)),
-
-            pub fn handler(_: *Context) @This() {
-                return .to_1;
-            }
-        });
-    };
-
-    const StateA = Tmp.EnterFsmState;
-
-    const allocator = std.testing.allocator;
-    var graph = try Graph.initWithFsm(allocator, StateA);
-    defer graph.deinit();
-
-    const ExampleRunner = Runner(true, StateA);
-
-    try std.testing.expectEqual(
-        graph.nodes.items.len,
-        ExampleRunner.state_map.states.len,
-    );
-
-    var ctx: Context = .{};
-    ExampleRunner.runHandler(ExampleRunner.idFromState(Tmp.EnterFsmState.State), &ctx);
 }

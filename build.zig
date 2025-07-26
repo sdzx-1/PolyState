@@ -18,6 +18,28 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
 
     addExampleGraphsStep(b, target, polystate);
+    addBenchStep(b, target, polystate);
+}
+
+fn addBenchStep(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    polystate: *std.Build.Module,
+) void {
+    const bench_exe = b.addExecutable(.{
+        .name = "polystate_bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("bench/highState.zig"),
+            .target = target,
+            .imports = &.{
+                .{ .name = "polystate", .module = polystate },
+            },
+        }),
+    });
+
+    const bench_run = b.addRunArtifact(bench_exe);
+    const bench_step = b.step("bench", "polystate bench");
+    bench_step.dependOn(&bench_run.step);
 }
 
 fn addExampleGraphsStep(
