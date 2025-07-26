@@ -12,5 +12,6 @@
         "build.zig.zon",
         "src",
         "examples",
+        "bench",
     },
 }
