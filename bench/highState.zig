@@ -15,12 +15,17 @@ pub fn Example(Current: type) type {
 
 pub fn Dummy(comptime Next: type, comptime int: comptime_int) type {
     return union(enum) {
-        to_next: Example(Next),
+        to_next0: Example(Next),
+        to_next1: Example(Next),
+        to_next2: Example(Next),
+        to_next3: Example(Next),
+        to_next4: Example(Next),
+        to_next5: Example(Next),
 
         pub const int_decl = int;
 
         pub fn handler(_: *Context) @This() {
-            return .to_next;
+            return .to_next0;
         }
     };
 }
