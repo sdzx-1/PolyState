@@ -41,7 +41,7 @@ pub const StateMap = struct {
     StateId: type,
 
     pub fn init(comptime FsmState: type) StateMap {
-        @setEvalBranchQuota(20_000_000);
+        @setEvalBranchQuota(200_000_000);
 
         comptime {
             const states = reachableStates(FsmState);
